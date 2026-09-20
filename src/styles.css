@@ -228,6 +228,51 @@ button:disabled {
   font-size: 13px;
 }
 
+.commit-table {
+  margin-top: 6px;
+}
+
+.commit-input {
+  font: inherit;
+  width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.commit-invalid-row .commit-input,
+.commit-input[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.commit-field-error {
+  margin-left: 10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.commit-feasible {
+  margin: 10px 0 0;
+  border: 1px solid #1e7d46;
+  background: #e9f7ef;
+  color: #175e37;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.commit-infeasible {
+  margin: 10px 0 0;
+  border: 1px solid #b06a00;
+  background: #fff5e0;
+  color: #80500a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;

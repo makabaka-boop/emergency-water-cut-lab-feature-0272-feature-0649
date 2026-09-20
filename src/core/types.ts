@@ -78,6 +78,20 @@ export interface SinkInterval {
 
 export const INVALID_NETWORK = 'INVALID_NETWORK' as const
 
+/**
+ * 联合最低供水承诺裁决：在固定当前最大供水总量（= analysis.value）的前提下，
+ * 多个需求点的最低供水量下限能否「同时」满足。
+ *
+ * 可行时仅给出结论与固定总量，不输出任何逐边/逐点分配——承诺问题只需
+ * 能/不能的联合裁决，单点分配由调用方另行读取区间或当前方案。
+ */
+export interface JointCommitment {
+  /** 固定的总供水量（= 裁决时的 analysis.value）。 */
+  total: number
+  /** 实际参与裁决（填写了非空下限）的需求点数量。 */
+  committed: number
+}
+
 export interface LoadError {
   code: typeof INVALID_NETWORK
   details: string[]
