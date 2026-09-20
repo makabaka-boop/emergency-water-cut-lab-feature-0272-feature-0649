@@ -1,5 +1,6 @@
 import { ChangeEvent, useMemo, useState } from 'react'
 import { relativeLoss, solvePlan, PlanSolution } from './core/analyze'
+import { judgeCommitmentsByNode } from './core/commitment'
 import { formatInt, formatPercent } from './core/format'
 import { sinkIntervalByNode } from './core/interval'
 import { initialLoaderState, reduceLoad } from './core/loader'
@@ -173,6 +174,134 @@ function SinkIntervalPanel({
   )
 }
 
+/**
+ * 联合最低供水承诺面板（当前断管演练）：工程师可为多个需求点各填一个
+ * 最低量（留空或 0..该点容量的整数）。裁决针对同一组建模边：
+ * 在容量、节点守恒与超级源→超级汇总量严格等于当前 analysis.value 的
+ * 条件下，全部下限能否**同时**满足——由下界环流 + 辅助源汇一次裁决，
+ * 不拼接单点区间、不比较承诺总和。
+ *
+ * 随填写、停用/恢复管段、清空方案立即重新裁决；载入新模型时由父组件
+ * 清空承诺。无效填写只就地标红提示并清除联合裁决；辅助求解异常同样
+ * 只清除裁决并提示，不影响基线、演练、停用集合与单点区间。
+ */
+function CommitmentPanel({
+  sinks,
+  drafts,
+  onCommit,
+  verdict,
+  invalidNode,
+  invalidReason,
+  solverError,
+  onClear,
+}: {
+  sinks: Model['network']['sinks']
+  drafts: Readonly<Record<string, string>>
+  onCommit: (node: string, raw: string) => void
+  verdict: { feasible: boolean; total: number } | null
+  invalidNode: string | null
+  invalidReason: string | null
+  solverError: string | null
+  onClear: () => void
+}) {
+  const filledCount = sinks.filter((k) => (drafts[k.node] ?? '').trim() !== '').length
+  return (
+    <div className="interval-box commitment-box">
+      <div className="interval-toolbar">
+        <label>联合最低供水承诺（当前方案）</label>
+        <button
+          type="button"
+          className="commitment-clear"
+          onClick={onClear}
+          disabled={filledCount === 0}
+        >
+          清空承诺
+        </button>
+      </div>
+      <p className="muted interval-note">
+        可同时为多个需求点填写最低供水量（0..需求能力 的整数，留空表示不承诺）。
+        页面在当前最大供水总量固定的前提下联合裁决：所有下限必须由{' '}
+        <strong>同一组</strong> 边流量同时兑现，不能用各点单点区间拼接代替。
+      </p>
+      <div className="commitment-table-wrap">
+        <table className="data-table commitment-table">
+          <thead>
+            <tr>
+              <th>需求点</th>
+              <th className="num">需求能力</th>
+              <th>最低供水量承诺</th>
+              <th>提示</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sinks.map((k) => {
+              const raw = drafts[k.node] ?? ''
+              const isFilled = raw.trim() !== ''
+              const isInvalid = invalidNode === k.node
+              return (
+                <tr key={k.node}>
+                  <td className="mono">{k.node}</td>
+                  <td className="num mono">{formatInt(k.capacity)}</td>
+                  <td>
+                    <input
+                      className={`commitment-input mono${isInvalid ? ' input-invalid' : ''}`}
+                      inputMode="numeric"
+                      value={raw}
+                      placeholder="留空"
+                      aria-label={`${k.node} 的最低供水量承诺`}
+                      onChange={(e) => onCommit(k.node, e.target.value)}
+                    />
+                  </td>
+                  <td className="commitment-hint">
+                    {isInvalid && (
+                      <span className="interval-error" role="alert">
+                        {invalidReason}
+                      </span>
+                    )}
+                    {!isInvalid && isFilled && <span className="muted">已填写</span>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {solverError && (
+        <p className="interval-error" role="alert">
+          联合裁决求解异常：{solverError}。已清除本次联合裁决，
+          基线、演练、停用集合与单点供水区间不受影响。
+        </p>
+      )}
+
+      {!solverError && invalidReason && invalidNode === null && (
+        <p className="interval-error" role="alert">
+          {invalidReason}
+        </p>
+      )}
+
+      {!solverError && verdict && (
+        verdict.feasible ? (
+          <p className="commitment-verdict commitment-ok" role="status">
+            ✔ 可同时兑现（固定总量 {formatInt(verdict.total)}）
+          </p>
+        ) : (
+          <p className="commitment-verdict commitment-bad" role="alert">
+            ✘ 联合约束不满足：在当前网络与固定总量 {formatInt(verdict.total)}{' '}
+            下，不存在同一组边流量同时兑现全部最低承诺（可能由共享瓶颈导致，
+            即使各承诺分别落在各自单点区间内、承诺之和未超过总量）。
+          </p>
+        )
+      )}
+      {!solverError && !invalidReason && !verdict && (
+        <p className="muted interval-note">
+          尚未填写任何承诺；填写后立即裁决，停用/恢复管段或清空方案时自动重算。
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [loader, setLoader] = useState(initialLoaderState)
   const [text, setText] = useState('')
@@ -181,6 +310,11 @@ export default function App() {
   const [page, setPage] = useState(0)
   // 工程师当前选中的需求点节点 id（基线与演练共用一个选择）。
   const [selectedSink, setSelectedSink] = useState('')
+  // 联合最低供水承诺的填写草稿（节点 id → 文本框原文）。只在当前模型内有效，
+  // 载入新模型时整体清空；停用/恢复/清空方案不改草稿，只触发重新裁决。
+  const [commitDrafts, setCommitDrafts] = useState<
+    Readonly<Record<string, string>>
+  >({})
 
   const model = loader.model
 
@@ -197,6 +331,8 @@ export default function App() {
     setFilter('')
     setPage(0)
     setSelectedSink('')
+    // 载入新模型时清空承诺（旧需求点 id 不再有效，联合裁决随之清除）。
+    setCommitDrafts({})
   }
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -276,6 +412,77 @@ export default function App() {
         : computeInterval(currentSolution, effectiveSink),
     [currentSolution, effectiveSink, disabled.size, baselineIntervalState],
   )
+
+  // 联合最低供水承诺：先就地校验每项填写（留空 / 0..容量 的整数），
+  // 再由下界环流 + 辅助源汇对同一组边做一次联合裁决。任何无效填写或
+  // 辅助求解异常都只清除联合裁决并就地提示，不触碰基线/演练/停用/单点区间。
+  // currentSolution 随停用/恢复/清空方案变化，故裁决随之自动重算。
+  const commitmentState = useMemo((): {
+    verdict: { feasible: boolean; total: number } | null
+    invalidNode: string | null
+    invalidReason: string | null
+    solverError: string | null
+  } => {
+    if (!model || !currentSolution) {
+      return { verdict: null, invalidNode: null, invalidReason: null, solverError: null }
+    }
+    const entries: { node: string; minimum: number }[] = []
+    let invalidNode: string | null = null
+    let invalidReason: string | null = null
+    for (const k of model.network.sinks) {
+      const raw = (commitDrafts[k.node] ?? '').trim()
+      if (raw === '') continue
+      if (!/^\d+$/.test(raw)) {
+        invalidNode = k.node
+        invalidReason = '最低供水量必须是整数'
+        break
+      }
+      const value = Number(raw)
+      if (!Number.isSafeInteger(value) || value < 0) {
+        invalidNode = k.node
+        invalidReason = '最低供水量必须是不小于 0 的整数'
+        break
+      }
+      if (value > k.capacity) {
+        invalidNode = k.node
+        invalidReason = `最低供水量必须不超过该点需求能力 ${formatInt(k.capacity)}`
+        break
+      }
+      entries.push({ node: k.node, minimum: value })
+    }
+    if (invalidNode !== null) {
+      return { verdict: null, invalidNode, invalidReason, solverError: null }
+    }
+    if (entries.length === 0) {
+      return { verdict: null, invalidNode: null, invalidReason: null, solverError: null }
+    }
+    try {
+      const result = judgeCommitmentsByNode(currentSolution, entries)
+      if (!result.ok) {
+        // 核心层校验（如陈旧 id）：作为表单级无效填写就地提示，不出裁决。
+        return { verdict: null, invalidNode: null, invalidReason: result.reason, solverError: null }
+      }
+      return {
+        verdict: { feasible: result.feasible, total: result.total },
+        invalidNode: null,
+        invalidReason: null,
+        solverError: null,
+      }
+    } catch (err) {
+      return {
+        verdict: null,
+        invalidNode: null,
+        invalidReason: null,
+        solverError: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }, [model, currentSolution, commitDrafts])
+
+  const onCommitChange = (node: string, raw: string) => {
+    setCommitDrafts((prev) => ({ ...prev, [node]: raw }))
+  }
+
+  const clearCommitments = () => setCommitDrafts({})
 
   const filteredArcs = useMemo(() => {
     if (!model) return []
@@ -461,6 +668,18 @@ export default function App() {
                 {disabled.size === 0 && (
                   <p className="muted">空方案下区间与基线区间一致。</p>
                 )}
+
+                <h3>联合最低供水承诺（当前方案）</h3>
+                <CommitmentPanel
+                  sinks={model.network.sinks}
+                  drafts={commitDrafts}
+                  onCommit={onCommitChange}
+                  verdict={commitmentState.verdict}
+                  invalidNode={commitmentState.invalidNode}
+                  invalidReason={commitmentState.invalidReason}
+                  solverError={commitmentState.solverError}
+                  onClear={clearCommitments}
+                />
               </>
             )}
 

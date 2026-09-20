@@ -228,6 +228,77 @@ button:disabled {
   font-size: 13px;
 }
 
+.commitment-box {
+  background: #f8faf7;
+  border-color: #cfe0c8;
+}
+
+.commitment-clear {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--accent);
+}
+
+.commitment-table-wrap {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.commitment-table {
+  font-size: 13px;
+}
+
+.commitment-table th,
+.commitment-table td {
+  padding: 5px 10px;
+}
+
+.commitment-input {
+  font: inherit;
+  width: 130px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.commitment-input.input-invalid {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.commitment-hint {
+  font-size: 12px;
+}
+
+.commitment-hint .interval-error {
+  margin: 0;
+}
+
+.commitment-verdict {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.commitment-ok {
+  background: #e9f6e8;
+  border: 1px solid #7fbf74;
+  color: #2f6b25;
+}
+
+.commitment-bad {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
